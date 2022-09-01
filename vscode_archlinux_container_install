@@ -1,0 +1,46 @@
+g#!/bin/bash
+
+# Installs vscode and dot net in an arch linux container.
+
+# Lables
+box_image="docker.io/library/archlinux:latest" # The image to be used for this container.
+box_name="vscode_archlinux_box" # The name of the box.
+app_to_export="code"
+
+# Comands
+up_cmd="sudo pacman -Syu" # Comand to upgrade conatainer
+in_cmd="sudo pacman -S" # Command to install package(s) from inside container.
+yes_flag="--noconfirm" # Flag to bypass user prompts.
+packages_to_install="neofetch code dotnet-sdk aspnet-runtime aspnet-targeting-pack \
+dotnet-host dotnet-runtime dotnet-targeting-pack dotnet-sdk dotnet-targeting-pack \
+netstandard-targeting-pack"
+flag_bad_install="echo \"bad_installation\" > installation_status"
+
+# instalation_status file later indicates wether or not the installation
+# was successfull
+touch installation_status
+
+# Create box using image, then pipe comands to install packages
+# and export application to container.
+distrobox create "$box_name" --image "$box_image"
+echo "($up_cmd $yes_flag && \
+$in_cmd $packages_to_install $yes_flag && \
+distrobox-export --app $app_to_export) \
+|| $flag_bad_install" \
+| distrobox-enter "$box_name"
+
+# The above comand will append the string "bad_installation" to installation_status
+# if the installation fails. If the installation was not successfull, the container is
+# removed so as to not leave the user with a bad conatiner.
+# WARNING: This needs to be dealt with carefully, as there could be a situation
+# in the future where something is added to this container, the installation fails,
+# and the whole application is removed as a result. At the very least, this block
+# must not be included in suplementery installs (e.g. something installing nodejs into
+# this container.
+if [ "$(cat installation_status)" = "bad_installation" ] ; then
+	echo "Installation failed"
+else
+	echo "Installation successful, look for $app_to_export in menu"
+fi
+
+rm installation_status

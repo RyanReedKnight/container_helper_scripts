@@ -1,0 +1,96 @@
+#!/bin/bash
+
+# Update comand variables
+apk_up="sudo apk upgrade -a" # Use for alpine linux
+apt_get_up="sudo apt-get update && sudo apt-get upgrade -y"
+apt_up="sudo apt update && sudo apt upgrade -y" # Use for images of debian, ubuntu, and their derivatives.
+dnf_up="sudo dnf upgrade -y && sudo dnf clean all" # Use for fedora images.
+pacman_Syu="sudo pacman -Syu --noconfirm" # Use for images of arch and it's derivatives.
+yum_up="sudo yum upgrade -y"
+zypper_dup="sudo zypper refresh && sudo zypper dist-upgrade -y" # Use for opensuse tumbleweed images. Do not use for opensuse leap images at all in this context.
+zypper_up="sudo zypper refresh && sudo zypper upgrade -y"   # Use for opensuse leap images, should not be used for opensuse tumbleweed images.
+
+# declare and define reg_map, which maps the image used for a container to the appropriete update/upgrade comand.
+declare -A reg_map
+
+reg_map=(\
+ ["quay.io/almalinux/8-base:8"]=$dnf_up\
+ ["quay.io/almalinux/almalinux:8"]=$dnf_up\
+ ["quay.io/almalinux/8-init:8"]=$dnf_up\
+ ["quay.io/almalinux/almalinux:9"]=$dnf_up\
+ ["quay.io/almalinux/almalinux:9-minimal"]=$dnf_up\
+ ["docker.io/library/alpine:3.15"]=$apk_up\
+ ["docker.io/library/alpine:3.16"]=$apk_up
+ ["docker.io/library/alpine:latest"]=$apk_up\
+ ["public.ecr.aws/amazonlinux/amazonlinux:1"]=$yum_up\
+ ["public.ecr.aws/amazonlinux/amazonlinux:2"]=$yum_up\
+ ["public.ecr.aws/amazonlinux/amazonlinux:2022.0.20220531.0"]=$yum_up\
+ ["docker.io/library/archlinux:latest"]=$pacman_Syu\
+ ["quay.io/centos/centos:stream8"]=$dnf_up\
+ ["quay.io/centos/centos:stream9"]=$dnf_up\
+ ["quay.io/centos/centos:7"]=$yum_up\
+ ["docker.io/debian/eol:wheezy"]=$apt_get_up\
+ ["docker.io/library/debian:8"]=$apt_up\
+ ["docker.io/library/debian:9"]=$apt_up\
+ ["docker.io/library/debian:10"]=$apt_up\
+ ["docker.io/library/debian:stable"]=$apt_up\
+ ["docker.io/library/debian:stable-backports"]=$apt_up\
+ ["docker.io/library/debian:testing"]=$apt_up\
+ ["docker.io/library/debian:testing-backports"]=$apt_up\
+ ["docker.io/library/debian:unstable"]=$apt_p\
+ ["registry.fedoraproject.org/fedora-toolbox:35"]=$dnf_up\
+ ["quay.io/fedora/fedora:35"]=$dnf_up\
+ ["quay.io/fedora/fedora:36"]=$dnf_up\
+ ["registry.fedoraproject.org/fedora:37"]=$dnf_up\
+ ["registry.opensuse.org/opensuse/tumbleweed:latest"]=$zypper_dup\
+ ["registry.opensuse.org/opensuse/toolbox:latest"]=$zypper_dup\
+ ["registry.fedoraproject.org/fedora:latest"]=$dnf_up\
+ ["docker.io/library/debian:stable"]=$apt_up\
+)
+
+update_box() {
+
+	# $1 feeds the functions the name of the toolbox
+
+	echo "Applying \"$2\" to $1"
+	echo "$2 ; exit" | toolbox enter "$1" # Pipe correct update/upgrade comand into container.
+                                                    # Did this as opossed to toolbox run so the progress would be visible in the terminal.
+	podman stop $box_name # Shut off box before proceding.
+}
+
+# update_all_boxes: applies appropriete update/upgrade comand to all conatiners listed from 'toolbox list'
+# This should update all containers created by toolbox or distrobox.
+# WARNING As of now I do not know if it will update all podman containers in reg_map, for the time being it should be assumed that it will do so. If this is undesirible, the function must not be used.
+
+update_all_boxes() {
+    podman ps -a | cat > temp_container_list
+    while IFS="" read -r line || [ -n "$line" ]; do
+        IFS=' ' read -a arr <<< "$line"
+        local box_img=${arr[1]}
+        local up_cmd="${reg_map[$box_img]}"
+        local box_name="${arr[-1]}"
+
+        if [[ -v reg_map["$box_img"] ]] ; then # Check that key exists.
+        	update_box "$box_name" "$up_cmd"
+        fi
+    done < temp_container_list
+    rm temp_container_list
+}
+
+# Below is a list of images that were shown to succesfully update when the above function was called (Note that
+# this does not necisarly mean that the other images did not successfull update, just that either
+# I have not tested them, or I am not familiar enough with the OS to determine that the test was successful)
+#
+#	quay.io/almalinux/almalinux:8
+#	quay.io/almalinux/almalinux
+#	quay.io/almalinux/almalinux:9
+#	docker.io/library/archlinux:latest
+#
+# Below are images which did not successfuly update when the above function was called (Note that an image not appearing in this list
+# does not mean it updates succesfuly, just that it has never been shown not to update successfully.
+#
+#	docker.io/library/debian:stable - this debian image does not come with sudo installed, and therefore the update fails,
+#		I believe that if sudo were to be installed in the conainer, it would update successfuly, but I have
+#		not confirmed this. 
+
+update_all_boxes
