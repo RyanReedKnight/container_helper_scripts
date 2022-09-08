@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Installs mysql-workbench in Alma Linux 8 container.
+
+# Variables that are related to the container.
+box_image="quay.io/almalinux/8-init:8" # The image to be used for this container.
+box_name="mysqlworkbench_alma8_box" # The name of the box.
+box_options="--init"
+app_to_export="mysql-workbench"
+
+# Packages to install.
+mysqlworkbench_pkg="mysql-workbench-community-8.0.20-1.el8.x86_64.rpm"
+packages_to_install="mysql-server ./$mysqlworkbench_pkg"
+wget_targets="https://downloads.mysql.com/archives/get/p/8/file/$mysqlworkbench_pkg"
+
+# Comands
+up_cmd="sudo dnf upgrade" # Comand to upgrade conatainer
+in_cmd="sudo dnf install" # Command to install package(s) from inside container.
+clean_cmd="sudo dnf clean all"
+yes_flag="-y" # Flag to bypass user prompts.
+start_and_enable="sudo systemctl start mysqld && sudo systemctl enable mysqld"
+flag_bad_install="echo \"bad_installation\" > installation_status"
+
+# instalation_status file later indicates wether or not the installation
+# was successfull
+touch installation_status
+
+# Grab third party packages.
+wget "$wget_targets"
+
+# Create box using image, then pipe comands to install packages, start services
+# and export application to container.
+distrobox create "$box_name" --image "$box_image" "$box_options"
+echo "($up_cmd $yes_flag && \
+$in_cmd $packages_to_install $yes_flag && 
+$clean_cmd && 
+$start_and_enable && \
+distrobox-export --app $app_to_export) \
+|| $flag_bad_install" \
+| distrobox-enter "$box_name"
+
+# The above command will append the string "bad_installation" to installation_status
+# if the installation fails. The following lines indicate to the user whether or not
+# the installation was successful.
+if [ "$(cat installation_status)" = "bad_installation" ] ; then
+	echo "Installation failed, to remove bad container, call \"podman rm $box_name --force\""
+else
+	echo "Installation successful, look for $app_to_export in menu"
+fi
+
+rm installation_status
+rm "$mysqlworkbench_pkg"
